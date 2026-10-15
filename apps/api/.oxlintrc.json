@@ -1,0 +1,7 @@
+{
+  "plugins": ["typescript", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": ["dist", "src/generated", "coverage"]
+}

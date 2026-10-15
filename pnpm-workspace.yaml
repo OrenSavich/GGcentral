@@ -1,0 +1,29 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Lifecycle scripts are denied unless listed here.
+allowBuilds:
+  '@prisma/engines': true
+  prisma: true
+  unrs-resolver: true
+  '@scarf/scarf': false
+
+# These pinned releases are newer than pnpm's minimum release age.
+# Remove an entry only after that release is old enough to install without it.
+minimumReleaseAgeExclude:
+  - '@next/env@16.4.1'
+  - '@next/eslint-plugin-next@16.4.1'
+  - '@next/swc-darwin-arm64@16.4.1'
+  - '@next/swc-darwin-x64@16.4.1'
+  - '@next/swc-linux-arm64-gnu@16.4.1'
+  - '@next/swc-linux-arm64-musl@16.4.1'
+  - '@next/swc-linux-x64-gnu@16.4.1'
+  - '@next/swc-linux-x64-musl@16.4.1'
+  - '@next/swc-win32-arm64-msvc@16.4.1'
+  - '@next/swc-win32-x64-msvc@16.4.1'
+  - dotenv@18.0.8
+  - eslint-config-next@16.4.1
+  - next@16.4.1
+  - react-dom@19.3.1
+  - react@19.3.1
