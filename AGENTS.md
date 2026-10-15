@@ -41,6 +41,6 @@ Read [docs/architecture/overview.md](docs/architecture/overview.md) and the ADRs
 - No Steam, PSN, or other platform API client, unofficial wrapper, or scraped credential flow in this repository until the integration research note exists.
 - No authentication or account-linking flow until the product decision is written down.
 - No hand-written database changes outside Prisma migrations.
-- No production deployment, Oracle Cloud changes, or production secrets in CI.
+- No production secrets in the repository or in workflow logs. Production deploys from `main` through `.github/workflows/deploy.yml`. The server `.env`, database password, and SSH private key stay out of Git.
 - No dependency floating onto Prisma 8 while it is a release candidate. The API pins Prisma 7.
 - No commit or push unless the user explicitly asks.

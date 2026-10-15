@@ -1,10 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+  workflow_call:
 
 jobs:
   validate:
@@ -46,3 +44,10 @@ jobs:
 
       - name: Validate the Prisma schema
         run: pnpm db:validate
+
+      - name: Keep PostgreSQL private in production Compose
+        run: |
+          if grep -n '5432:5432' deploy/docker-compose.yml; then
+            echo 'Production Compose must not publish PostgreSQL.'
+            exit 1
+          fi

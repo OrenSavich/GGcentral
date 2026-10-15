@@ -1,0 +1,15 @@
+# Public entrypoint. PostgreSQL is not routed here.
+# /api/* is the same-origin prefix baked into the web image as NEXT_PUBLIC_API_URL.
+# Add a domain and TLS by replacing this site address later.
+
+:80 {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

@@ -10,7 +10,7 @@ GGCentral is a gaming identity platform. The long-term product gathers a player'
 - PostgreSQL 18 and Prisma ORM 7, owned by the API
 - pnpm workspaces
 - Docker Compose for local development
-- GitHub Actions for validation only
+- GitHub Actions for validation, image publishing, and deployment
 
 Supported runtime: Node.js 24.22.0 LTS. Docker and CI pin that version. See [docs/architecture/overview.md](docs/architecture/overview.md).
 
@@ -62,7 +62,15 @@ pnpm test
 pnpm db:validate
 ```
 
-GitHub Actions runs these checks. It does not deploy.
+Pull requests run these checks. A push to `main` runs them again, publishes `linux/arm64` images to GHCR, and deploys them to the Oracle VM.
+
+## Production
+
+The Oracle host runs `deploy/docker-compose.yml` from `/home/ubuntu/ggcentral`. Caddy publishes port 80 only. The web app is served at `/`, and the API is served at `/api`. PostgreSQL has no published port. Production environment values live in `/home/ubuntu/ggcentral/.env` on the server. See [deploy/env.production.example](deploy/env.production.example).
+
+GitHub Actions stores the Oracle SSH private key and host key as repository secrets. GHCR login uses the workflow token for the duration of the pull, then logs out. The database password is not a GitHub secret.
+
+The VM firewall allows port 80. The Oracle subnet security list, and any network security group attached to the instance, must allow inbound TCP 80 as well. The server IP is ephemeral. After it changes, update `WEB_ORIGIN` in the server `.env`, `ORACLE_SSH_HOST`, and `ORACLE_SSH_KNOWN_HOSTS`, then rerun the Deploy workflow. The web image does not contain the IP. Add a domain and HTTPS in the Caddyfile when a name exists.
 
 ## Further reading
 

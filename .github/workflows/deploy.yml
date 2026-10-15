@@ -1,0 +1,146 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ggcentral-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api_image: ${{ steps.meta.outputs.api_image }}
+      web_image: ${{ steps.meta.outputs.web_image }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Name the images
+        id: meta
+        run: |
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "api_image=ghcr.io/${owner}/ggcentral-api" >> "$GITHUB_OUTPUT"
+          echo "web_image=ghcr.io/${owner}/ggcentral-web" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile.production
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: |
+            ${{ steps.meta.outputs.api_image }}:${{ steps.meta.outputs.image_tag }}
+            ${{ steps.meta.outputs.api_image }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=ggcentral-api
+          cache-to: type=gha,scope=ggcentral-api,mode=max
+
+      - name: Publish the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile.production
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          build-args: NEXT_PUBLIC_API_URL=/api
+          tags: |
+            ${{ steps.meta.outputs.web_image }}:${{ steps.meta.outputs.image_tag }}
+            ${{ steps.meta.outputs.web_image }}:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=ggcentral-web
+          cache-to: type=gha,scope=ggcentral-web,mode=max
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.ORACLE_SSH_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$SSH_KEY" ] || [ -z "$KNOWN_HOSTS" ]; then
+            echo "Oracle SSH secrets are not configured." >&2
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/oracle.key
+          chmod 600 ~/.ssh/oracle.key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Copy the deployment files
+        env:
+          SSH_HOST: ${{ vars.ORACLE_SSH_HOST }}
+          SSH_USER: ${{ vars.ORACLE_SSH_USER }}
+          SSH_PORT: ${{ vars.ORACLE_SSH_PORT }}
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_PORT" ]; then
+            echo "Oracle SSH variables are not configured." >&2
+            exit 1
+          fi
+          dest="${SSH_USER}@${SSH_HOST}"
+          ssh -i "${HOME}/.ssh/oracle.key" -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$dest" "mkdir -p /home/ubuntu/ggcentral"
+          scp -i "${HOME}/.ssh/oracle.key" -o IdentitiesOnly=yes -P "$SSH_PORT" \
+            deploy/docker-compose.yml \
+            deploy/Caddyfile \
+            deploy/remote-up.sh \
+            "${dest}:/home/ubuntu/ggcentral/"
+          ssh -i "${HOME}/.ssh/oracle.key" -o IdentitiesOnly=yes -p "$SSH_PORT" \
+            "$dest" "chmod 700 /home/ubuntu/ggcentral/remote-up.sh"
+
+      - name: Deploy the published images
+        env:
+          SSH_HOST: ${{ vars.ORACLE_SSH_HOST }}
+          SSH_USER: ${{ vars.ORACLE_SSH_USER }}
+          SSH_PORT: ${{ vars.ORACLE_SSH_PORT }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+          IMAGE_TAG: ${{ needs.publish.outputs.image_tag }}
+        run: |
+          dest="${SSH_USER}@${SSH_HOST}"
+          printf '%s' "$GHCR_TOKEN" | ssh -T \
+            -i "${HOME}/.ssh/oracle.key" \
+            -o IdentitiesOnly=yes \
+            -p "$SSH_PORT" \
+            "$dest" \
+            "IMAGE_TAG='${IMAGE_TAG}' GHCR_ACTOR='${GHCR_ACTOR}' sh /home/ubuntu/ggcentral/remote-up.sh"

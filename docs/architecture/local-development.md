@@ -46,7 +46,7 @@ API, web, and PostgreSQL together:
 docker compose up --build
 ```
 
-Compose publishes PostgreSQL on `localhost:5432` for host tools. A production compose file must not publish that port. The API waits until PostgreSQL is healthy. The web app waits until `GET /health` succeeds. Readiness, `GET /health/ready`, runs `SELECT 1` and does not require a domain schema.
+Compose publishes PostgreSQL on `localhost:5432` for host tools. The Postgres 18 image keeps its data under `/var/lib/postgresql`, and that is the volume mount. A production compose file must not publish that port. The API waits until PostgreSQL is healthy. The web app waits until `GET /health` succeeds. Readiness, `GET /health/ready`, runs `SELECT 1` and does not require a domain schema.
 
 The Dockerfiles in `apps/api` and `apps/web` are development images. They install dependencies and run the dev servers. Compose builds them from the repository root so the pnpm lockfile is available. An anonymous volume keeps the API container's generated Prisma client separate from the host's copy.
 
@@ -75,15 +75,10 @@ The API uses Vitest and oxlint. The web app uses ESLint. Prettier is configured 
 
 Set `DATABASE_URL` when running `pnpm db:validate` outside Compose. The example value is enough. The command does not connect.
 
-## Production gaps
+## Production
 
-These Dockerfiles are not production images. A later deployment change still has to:
+`apps/api/Dockerfile` and `apps/web/Dockerfile` are development images. Production images are `apps/api/Dockerfile.production` and `apps/web/Dockerfile.production`. They compile the apps, run as the `node` user, and are published for `linux/arm64`.
 
-- build `nest build` and `next build` in a multi-stage image
-- run as a non-root user
-- keep PostgreSQL off the public network
-- terminate TLS in a reverse proxy
-- inject environment variables on the host instead of baking them into an image
-- build the image for `linux/arm64` before running it on the Oracle Ubuntu VM
+`deploy/docker-compose.yml` runs those images on the Oracle VM. It does not publish PostgreSQL. Caddy on port 80 forwards `/` to the web app and `/api` to the API. The web image calls `/api` on the same origin, so replacing the ephemeral server IP does not require a new web build. Set the new origin in the server's `.env` because the API uses it for CORS.
 
-Do not deploy this scaffold to that VM from this repository state.
+The server `.env` is created on the host. GitHub Actions copies the Compose file and Caddyfile, pulls the images for the commit SHA, and restarts the stack. TLS waits until the deployment has a domain.
