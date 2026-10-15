@@ -1,0 +1,23 @@
+{
+  "name": "ggcentral",
+  "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24.22.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ggcentral/api --filter @ggcentral/web dev",
+    "dev:api": "pnpm --filter @ggcentral/api dev",
+    "dev:web": "pnpm --filter @ggcentral/web dev",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:generate": "pnpm --filter @ggcentral/api db:generate",
+    "db:validate": "pnpm --filter @ggcentral/api db:validate"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
+  }
+}

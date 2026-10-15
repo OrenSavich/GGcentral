@@ -1,0 +1,12 @@
+// Domain models are intentionally absent.
+// The conceptual model and open questions live in docs/architecture/data-model.md.
+// Add a model only together with a versioned migration.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

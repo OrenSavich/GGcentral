@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+
+# Production image for the API. The development image remains apps/api/Dockerfile.
+# Build from the repository root:
+#   docker build -f apps/api/Dockerfile.production .
+# Behind a TLS-inspecting proxy, pass the proxy CA as a BuildKit secret named node_extra_ca.
+
+FROM node:24.22.0-bookworm-slim AS build
+
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV DATABASE_URL=postgresql://ggcentral:ggcentral_local_only@127.0.0.1:5432/ggcentral
+
+WORKDIR /workspace
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl python3 make g++ \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable \
+  && corepack prepare pnpm@12.11.2 --activate
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY apps/api/package.json apps/api/package.json
+
+RUN pnpm install --frozen-lockfile --filter @ggcentral/api...
+
+COPY apps/api apps/api
+
+WORKDIR /workspace/apps/api
+
+RUN --mount=type=secret,id=node_extra_ca,required=false \
+  if [ -s /run/secrets/node_extra_ca ]; then \
+    export NODE_EXTRA_CA_CERTS=/run/secrets/node_extra_ca; \
+  fi; \
+  pnpm exec prisma generate --config prisma7.config.ts \
+  && pnpm build \
+  && test -d src/generated \
+  && find src/generated -type f ! -name '*.ts' ! -name '*.tsx' ! -name '*.map' -exec sh -c ' \
+       for file do \
+         target="dist/generated/${file#src/generated/}"; \
+         mkdir -p "$(dirname "$target")"; \
+         cp "$file" "$target"; \
+       done \
+     ' sh {} + \
+  && test -f dist/main.js
+
+FROM node:24.22.0-bookworm-slim AS runtime
+
+ENV NODE_ENV=production
+ENV HOME=/home/node
+
+WORKDIR /workspace
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=build --chown=node:node /workspace/apps/api/node_modules ./apps/api/node_modules
+COPY --from=build --chown=node:node /workspace/apps/api/package.json ./apps/api/package.json
+COPY --from=build --chown=node:node /workspace/apps/api/dist ./apps/api/dist
+COPY --from=build --chown=node:node /workspace/apps/api/prisma ./apps/api/prisma
+COPY --from=build --chown=node:node /workspace/apps/api/prisma7.config.ts ./apps/api/prisma7.config.ts
+
+USER node
+
+WORKDIR /workspace/apps/api
+
+EXPOSE 3001
+
+CMD ["node", "dist/main.js"]
